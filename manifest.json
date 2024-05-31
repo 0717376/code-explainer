@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Code Explainer",
+  "version": "1.0",
+  "description": "Получение разъяснений для выделенного блока кода",
+  "permissions": ["activeTab", "scripting", "contextMenus"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["marked.min.js", "highlight.min.js", "styles.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
