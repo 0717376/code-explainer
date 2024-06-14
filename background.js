@@ -10,25 +10,28 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   console.log('Context menu clicked', info, tab);
   if (info.menuItemId === 'explainCode') {
-    chrome.scripting.insertCSS({
-      target: { tabId: tab.id },
-      files: ['styles.css']
-    }, () => {
-      chrome.scripting.executeScript({
+    chrome.storage.sync.get(['bearerToken'], (result) => {
+      const bearerToken = result.bearerToken || '';
+      chrome.scripting.insertCSS({
         target: { tabId: tab.id },
-        files: ['marked.min.js', 'highlight.min.js'],
+        files: ['styles.css']
       }, () => {
         chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          function: explainSelectedCode,
-          args: [info.selectionText]
+          files: ['highlight.min.js', 'marked.min.js']
+        }, () => {
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            function: explainSelectedCode,
+            args: [info.selectionText, bearerToken]
+          });
         });
       });
     });
   }
 });
 
-async function explainSelectedCode(selectedText) {
+async function explainSelectedCode(selectedText, bearerToken) {
   console.log('Executing explainSelectedCode with text:', selectedText);
 
   const modal = document.createElement('div');
@@ -68,8 +71,73 @@ async function explainSelectedCode(selectedText) {
     document.body.removeChild(closeButtonContainer);
   });
 
+  modal.appendChild(closeButtonContainer);
+  closeButtonContainer.appendChild(closeButton);
+  document.body.appendChild(modal);
+  document.body.appendChild(closeButtonContainer);
+
+  if (!bearerToken) {
+    const tokenInputLabel = document.createElement('label');
+    tokenInputLabel.textContent = 'Введите Bearer Token:';
+    tokenInputLabel.style.display = 'block';
+    tokenInputLabel.style.marginBottom = '10px';
+
+    const tokenInput = document.createElement('input');
+    tokenInput.type = 'text';
+    tokenInput.style.width = '100%';
+    tokenInput.style.padding = '10px';
+    tokenInput.style.border = '1px solid #ddd';
+    tokenInput.style.borderRadius = '4px';
+    tokenInput.style.marginBottom = '20px';
+    tokenInput.style.fontSize = '14px';
+
+    const saveButton = document.createElement('button');
+    saveButton.textContent = 'Сохранить';
+    saveButton.style.padding = '10px 20px';
+    saveButton.style.background = '#007bff';
+    saveButton.style.color = '#ffffff';
+    saveButton.style.border = 'none';
+    saveButton.style.borderRadius = '4px';
+    saveButton.style.cursor = 'pointer';
+    saveButton.style.fontSize = '14px';
+    saveButton.style.marginRight = '10px';
+    saveButton.addEventListener('click', async () => {
+      const token = tokenInput.value;
+      if (token) {
+        try {
+          const testResponse = await fetch('https://ai.muravskiy.com/ollama/api/tags', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (!testResponse.ok) {
+            throw new Error('Токен некорректный');
+          }
+          chrome.storage.sync.set({ bearerToken: token }, () => {
+            alert('Token сохранен! Попробуйте снова.');
+            document.body.removeChild(modal);
+            document.body.removeChild(closeButtonContainer);
+          });
+        } catch (error) {
+          alert('Пожалуйста, введите валидный Bearer Token.');
+        }
+      } else {
+        alert('Пожалуйста, введите Bearer Token.');
+      }
+    });
+
+
+    modal.appendChild(tokenInputLabel);
+    modal.appendChild(tokenInput);
+    modal.appendChild(saveButton);
+    modal.appendChild(retryButton);
+
+    return;
+  }
+
   const disclaimerText = document.createElement('div');
-  disclaimerText.textContent = 'Ответы от LLM могут быть ошибочны и неточны';
+  disclaimerText.textContent = 'Ответы LLM могут быть ошибочны и неточны';
   disclaimerText.style.color = 'rgba(128, 128, 128, 0.5)';
   disclaimerText.style.textAlign = 'center';
   disclaimerText.style.fontSize = '12px';
@@ -79,12 +147,10 @@ async function explainSelectedCode(selectedText) {
   explanationText.style.marginTop = '30px';
   explanationText.style.lineHeight = '1.5';
   explanationText.style.fontSize = '16px';
+  explanationText.classList.add('custom-explanation');
 
   modal.appendChild(disclaimerText);
   modal.appendChild(explanationText);
-  closeButtonContainer.appendChild(closeButton);
-  document.body.appendChild(modal);
-  document.body.appendChild(closeButtonContainer);
 
   try {
     console.log('Sending request to AI');
@@ -92,26 +158,40 @@ async function explainSelectedCode(selectedText) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImQyZDA3YThkLWMyY2UtNGVhOC05NjJiLWQ4ODViNDM2OWMzNiJ9.ApRN8XLUtTtYQToU4b3gTYdEqTOnyD1iXyu1VicB7rI'
+        'Authorization': `Bearer ${bearerToken}`
       },
       body: JSON.stringify({
         model: 'codestral',
-        prompt: `Я системный аналитик среднего уровня, разбираюсь в основных концепциях программирования и алгоритмах. Объясни этот код ясно и понятно на русском языке с учетом моего уровня знаний.
+        prompt: `Я системный аналитик, который хочет научиться хорошо читать и понимать код. Мой текущий уровень - базовые знания основных концепций программирования и алгоритмов. 
 
-  Используй форматирование markdown для структурирования объяснения по разделам:
-  ### Общее описание 
-  ### Входные данные
-  ### Выходные данные
-  ### Пошаговый алгоритм
-  ### Важные нюансы реализации
+Объясни предоставленный код (или его часть) ясно и понятно на русском языке с учетом моего уровня знаний. Приводи по ходу объяснений как можно больше релевантных фрагментов из анализируемого кода, снабжая их подробными комментариями, чтобы со временем я смог читать код самостоятельно.
 
-  Добавь блоки кода для иллюстрации ключевых моментов. После объяснения предложи возможные улучшения кода с точки зрения читаемости, эффективности и поддерживаемости, если это уместно. Не надо никаких приветствий, сразу приступай к объяснению.
+Используй форматирование markdown для структурирования объяснения по следующим разделам:
 
-  Вот код для анализа:
+#### Общее описание
+- Кратко опиши назначение и функциональность кода в целом.
 
-  ${selectedText}
+#### Входные данные
+- Укажи, какие входные данные принимает код, и в каком формате.
 
-  Пожалуйста, дай развернутый ответ на русском языке, без фраз на английском. Спасибо!`,
+#### Выходные данные
+- Поясни, какие выходные данные или результат возвращает код.
+
+#### Пошаговый алгоритм
+- Разбери алгоритм работы кода по шагам, уделяя внимание ключевым моментам.
+- Снабди каждый шаг примерами фрагментов кода с подробными комментариями.
+
+#### Важные нюансы реализации  
+- Укажи на важные особенности и нюансы реализации, которые надо учитывать.
+- Поясни назначение нетривиальных конструкций кода, если они есть.
+
+Избегай предположений и неуверенных выводов. Если какой-то части кода не хватает контекста для полного объяснения, укажи это явно. Уделяй внимание деталям, чтобы минимизировать вероятность ошибок или неправильных интерпретаций. 
+
+Вот код (или фрагмент кода) на C# для анализа:
+
+${selectedText}
+
+Пожалуйста, дай развернутый ответ на русском языке, не используя фраз на английском. Не надо никаких приветствий, сразу приступай к объяснению. Спасибо!`,
         stream: true
       })
     });
@@ -155,7 +235,10 @@ async function explainSelectedCode(selectedText) {
 
       const md = marked.parse(explanation);
       explanationText.innerHTML = md;
-      hljs.highlightAll();
+
+      document.querySelectorAll('.custom-explanation pre code').forEach((block) => {
+        hljs.highlightBlock(block);
+      });
     }
 
     console.log('Stream finished');

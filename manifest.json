@@ -3,7 +3,7 @@
   "name": "Code Explainer",
   "version": "1.0",
   "description": "Получение разъяснений для выделенного блока кода",
-  "permissions": ["activeTab", "scripting", "contextMenus"],
+  "permissions": ["activeTab", "scripting", "contextMenus", "storage", "notifications"],
   "background": {
     "service_worker": "background.js"
   },
