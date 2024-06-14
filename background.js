@@ -127,14 +127,18 @@ async function explainSelectedCode(selectedText, bearerToken) {
       }
     });
 
-
     modal.appendChild(tokenInputLabel);
     modal.appendChild(tokenInput);
     modal.appendChild(saveButton);
-    modal.appendChild(retryButton);
 
     return;
   }
+
+  const explanationText = document.createElement('div');
+  explanationText.style.marginTop = '30px';
+  explanationText.style.lineHeight = '1.5';
+  explanationText.style.fontSize = '16px';
+  explanationText.classList.add('custom-explanation');
 
   const disclaimerText = document.createElement('div');
   disclaimerText.textContent = 'Ответы LLM могут быть ошибочны и неточны';
@@ -143,17 +147,18 @@ async function explainSelectedCode(selectedText, bearerToken) {
   disclaimerText.style.fontSize = '12px';
   disclaimerText.style.marginBottom = '6px';
 
-  const explanationText = document.createElement('div');
-  explanationText.style.marginTop = '30px';
-  explanationText.style.lineHeight = '1.5';
-  explanationText.style.fontSize = '16px';
-  explanationText.classList.add('custom-explanation');
+  const loader = document.createElement('div');
+  loader.classList.add('loader');
 
   modal.appendChild(disclaimerText);
+  modal.appendChild(loader);
   modal.appendChild(explanationText);
 
   try {
     console.log('Sending request to AI');
+    explanationText.style.display = 'none';
+    loader.style.display = 'block';
+
     const response = await fetch('https://ai.muravskiy.com/ollama/api/generate', {
       method: 'POST',
       headers: {
@@ -162,7 +167,7 @@ async function explainSelectedCode(selectedText, bearerToken) {
       },
       body: JSON.stringify({
         model: 'codestral',
-        prompt: `Я системный аналитик, который хочет научиться хорошо читать и понимать код. Мой текущий уровень - базовые знания основных концепций программирования и алгоритмов. 
+        prompt: `Я системный аналитик, который хочет научиться хорошо читать и понимать код на C#. Мой текущий уровень - базовые знания основных концепций программирования и алгоритмов. 
 
 Объясни предоставленный код (или его часть) ясно и понятно на русском языке с учетом моего уровня знаний. Приводи по ходу объяснений как можно больше релевантных фрагментов из анализируемого кода, снабжая их подробными комментариями, чтобы со временем я смог читать код самостоятельно.
 
@@ -211,8 +216,9 @@ ${selectedText}
       const { done, value } = await reader.read();
       console.log('Received chunk:', done, value);
 
-      if (done) {
-        break;
+      if (!done) {
+        loader.style.display = 'none';
+        explanationText.style.display = 'block';
       }
 
       buffer += decoder.decode(value, { stream: true });
@@ -239,11 +245,16 @@ ${selectedText}
       document.querySelectorAll('.custom-explanation pre code').forEach((block) => {
         hljs.highlightBlock(block);
       });
+
+      if (done) {
+        break;
+      }
     }
 
     console.log('Stream finished');
   } catch (error) {
     console.error('Error:', error);
     explanationText.textContent = 'Ошибка при объяснении кода: ' + error.message;
+    loader.style.display = 'none';
   }
 }
